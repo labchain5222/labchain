@@ -27,6 +27,8 @@ services:
           --enr-address ${BEACON_ENR_ADDRESS:-} \
           --enr-udp-port ${P2P_PORT:-9000} \
           --enr-tcp-port ${P2P_PORT:-9000} \
+          --disable-enr-auto-update \
+          --disable-discovery \
           --target-peers ${TARGET_PEERS:-100} \
           --allow-insecure-genesis-sync \
           --boot-nodes ${BOOTNODE_ENR:?Set BOOTNODE_ENR in .env (see get-bootnode-enr.sh)} \
