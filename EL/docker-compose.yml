@@ -1,0 +1,59 @@
+services:
+  reth:
+    image: ${RETH_IMAGE:-ghcr.io/paradigmxyz/reth:latest}
+    restart: unless-stopped
+    networks:
+      - labchain-net
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=${RETH_LOG_LEVEL:-info}
+    stop_grace_period: 30s
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -eu
+        if [ ! -f /data/.genesis_applied ]; then
+          reth init --chain /chainspec/genesis.json --datadir /data
+          touch /data/.genesis_applied
+        fi
+        exec reth node \
+        --datadir /data \
+        --chain /chainspec/genesis.json \
+        --http \
+        --http.addr 0.0.0.0 \
+        --http.port ${HTTP_PORT:-8545} \
+        --http.corsdomain '*' \
+        --http.api admin,debug,eth,net,trace,txpool,web3 \
+        --ws \
+        --ws.addr 0.0.0.0 \
+        --ws.port ${WS_PORT:-8546} \
+        --ws.origins '*' \
+        --ws.api admin,debug,eth,net,trace,txpool,web3 \
+        --authrpc.addr 0.0.0.0 \
+        --authrpc.port ${AUTHRPC_PORT:-8551} \
+        --authrpc.jwtsecret /jwt.hex \
+        --port ${P2P_PORT:-30303} \
+        --discovery.port ${P2P_PORT:-30303} \
+        --discovery.addr 0.0.0.0 \
+        ${BOOTNODES:+--bootnodes $BOOTNODES}
+    volumes:
+      - ${EL_DATA_DIR:-./data}:/data
+      - ${GENESIS_DIR:-../config/metadata}:/chainspec:ro
+      - ${JWT_SECRET:-../config/jwt/jwtsecret}:/jwt.hex:ro
+    ports:
+      - "${HTTP_PORT:-8545}:${HTTP_PORT:-8545}"
+      - "${WS_PORT:-8546}:${WS_PORT:-8546}"
+      - "${AUTHRPC_PORT:-8551}:${AUTHRPC_PORT:-8551}"
+      - "${P2P_PORT:-30303}:${P2P_PORT:-30303}/tcp"
+      - "${P2P_PORT:-30303}:${P2P_PORT:-30303}/udp"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  labchain-net:
+    name: labchain-net

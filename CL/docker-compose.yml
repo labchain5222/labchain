@@ -1,0 +1,50 @@
+services:
+  lighthouse:
+    image: ${LIGHTHOUSE_IMAGE:-sigp/lighthouse:latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=${LIGHTHOUSE_LOG_LEVEL:-info}
+    networks:
+      - labchain-net
+    stop_grace_period: 30s
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -eu
+        exec lighthouse bn \
+          --testnet-dir /consensus \
+          --execution-endpoint ${EXECUTION_ENDPOINT:-http://reth:8551} \
+          --execution-jwt /jwt.hex \
+          --datadir /data \
+          --http \
+          --http-address 0.0.0.0 \
+          --http-port ${HTTP_PORT:-5052} \
+          --http-allow-origin '*' \
+          --port ${P2P_PORT:-9000} \
+          --enr-address ${BEACON_ENR_ADDRESS:-} \
+          --enr-udp-port ${P2P_PORT:-9000} \
+          --enr-tcp-port ${P2P_PORT:-9000} \
+          --target-peers ${TARGET_PEERS:-100} \
+          --allow-insecure-genesis-sync \
+          ${BOOT_NODES:+--boot-nodes $BOOT_NODES} \
+          ${EXTRA_LIGHTHOUSE_FLAGS:-}
+    volumes:
+      - ${CL_DATA_DIR:-./data}:/data
+      - ${CONSENSUS_DIR:-../config/metadata}:/consensus:ro
+      - ${JWT_SECRET:-../config/jwt/jwtsecret}:/jwt.hex:ro
+    ports:
+      - "${HTTP_PORT:-5052}:${HTTP_PORT:-5052}"
+      - "${P2P_PORT:-9000}:${P2P_PORT:-9000}/tcp"
+      - "${P2P_PORT:-9000}:${P2P_PORT:-9000}/udp"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  labchain-net:
+    name: labchain-net

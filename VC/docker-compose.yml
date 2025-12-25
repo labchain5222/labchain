@@ -1,0 +1,37 @@
+services:
+  lighthouse-vc:
+    image: ${LIGHTHOUSE_IMAGE:-sigp/lighthouse:latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=${LIGHTHOUSE_LOG_LEVEL:-info}
+    networks:
+      - labchain-net
+    stop_grace_period: 30s
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -eu
+        exec lighthouse --datadir /data vc \
+          --testnet-dir /consensus \
+          --beacon-nodes ${BEACON_NODE_ENDPOINTS:-http://lighthouse:5052} \
+          --validators-dir /keystores/validators \
+          --secrets-dir /keystores/secrets \
+          --init-slashing-protection \
+          --suggested-fee-recipient ${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000} \
+          ${EXTRA_LIGHTHOUSE_VC_FLAGS:-}
+    volumes:
+      - ${VC_DATA_DIR:-./data}:/data
+      - ${CONSENSUS_DIR:-../config/metadata}:/consensus:ro
+      - ${KEYSTORE_DIR:?KEYSTORE_DIR is required - path to your validator keystores}:/keystores
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  labchain-net:
+    name: labchain-net
