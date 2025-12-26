@@ -29,6 +29,7 @@ USAGE:
   ./node.sh <command> [node]
 
 COMMANDS:
+  init <node>       Initialize node configuration (set public IP)
   start <node>      Start a node
   stop <node>       Stop a node
   restart <node>    Restart a node
@@ -43,6 +44,7 @@ NODES:
   all     All nodes
 
 EXAMPLES:
+  ./node.sh init cl           # Initialize CL (select public/internal IP)
   ./node.sh start all         # Start all nodes (EL, CL, VC)
   ./node.sh start el          # Start only EL
   ./node.sh stop vc           # Stop validator client
@@ -68,6 +70,162 @@ ENVIRONMENT VARIABLES:
     FEE_RECIPIENT       - Fee recipient address
 
 EOF
+}
+
+# Get public IP address
+get_public_ip() {
+  local ip=""
+
+  # Try multiple services to get public IP
+  ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null) || \
+  ip=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null) || \
+  ip=$(curl -s --max-time 5 https://icanhazip.com 2>/dev/null) || \
+  ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2>/dev/null)
+
+  # Validate IP format
+  if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "$ip"
+  else
+    return 1
+  fi
+}
+
+# Get internal/local IP address
+get_internal_ip() {
+  local ip=""
+
+  # Try to get the primary internal IP
+  if command -v ip &> /dev/null; then
+    # Linux with ip command
+    ip=$(ip route get 1 2>/dev/null | awk '{print $7; exit}')
+  fi
+
+  if [ -z "$ip" ] && command -v ifconfig &> /dev/null; then
+    # macOS / BSD
+    ip=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | head -1 | awk '{print $2}')
+  fi
+
+  # Validate IP format
+  if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "$ip"
+  else
+    return 1
+  fi
+}
+
+# Initialize node configuration
+init_node() {
+  local node=$1
+
+  case $node in
+    cl)
+      init_cl
+      ;;
+    all)
+      info "Initializing all nodes..."
+      init_cl
+      success "All nodes initialized"
+      ;;
+    *)
+      error "Init not supported for node: $node (currently only 'cl' is supported)"
+      return 1
+      ;;
+  esac
+}
+
+# Initialize CL configuration
+init_cl() {
+  local env_file="$SCRIPT_DIR/CL/.env"
+
+  if [ ! -f "$env_file" ]; then
+    error "CL/.env file not found"
+    return 1
+  fi
+
+  # Get both IP addresses
+  info "Detecting IP addresses..."
+  local public_ip internal_ip
+  public_ip=$(get_public_ip)
+  internal_ip=$(get_internal_ip)
+
+  echo ""
+  echo -e "${BLUE}Available IP addresses:${NC}"
+  echo ""
+
+  local options=()
+  local option_num=1
+
+  if [ -n "$public_ip" ]; then
+    echo -e "  ${GREEN}$option_num)${NC} Public IP:   $public_ip"
+    options+=("$public_ip")
+    ((option_num++))
+  fi
+
+  if [ -n "$internal_ip" ]; then
+    echo -e "  ${GREEN}$option_num)${NC} Internal IP: $internal_ip"
+    options+=("$internal_ip")
+    ((option_num++))
+  fi
+
+  echo -e "  ${GREEN}$option_num)${NC} Custom IP (enter manually)"
+  options+=("custom")
+
+  echo ""
+
+  if [ ${#options[@]} -eq 1 ]; then
+    error "Failed to detect any IP addresses"
+    return 1
+  fi
+
+  # Prompt user for selection
+  local selection
+  while true; do
+    read -p "Select IP type [1-$option_num]: " selection
+
+    if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$option_num" ]; then
+      break
+    fi
+    warn "Invalid selection. Please enter a number between 1 and $option_num"
+  done
+
+  local selected_ip
+  local idx=$((selection - 1))
+
+  if [ "${options[$idx]}" = "custom" ]; then
+    # Custom IP entry
+    while true; do
+      read -p "Enter custom IP address: " selected_ip
+      if [[ $selected_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        break
+      fi
+      warn "Invalid IP format. Please enter a valid IPv4 address (e.g., 192.168.1.100)"
+    done
+  else
+    selected_ip="${options[$idx]}"
+  fi
+
+  info "Selected Discovery IP: $selected_ip"
+
+  # Update BEACON_ENR_ADDRESS in .env file
+  if grep -q "^BEACON_ENR_ADDRESS=" "$env_file"; then
+    # Get current value
+    local current_ip
+    current_ip=$(grep "^BEACON_ENR_ADDRESS=" "$env_file" | cut -d'=' -f2)
+
+    if [ "$current_ip" = "$selected_ip" ]; then
+      info "BEACON_ENR_ADDRESS is already set to $selected_ip"
+      return 0
+    fi
+
+    # Replace existing value
+    sed -i.bak "s/^BEACON_ENR_ADDRESS=.*/BEACON_ENR_ADDRESS=$selected_ip/" "$env_file"
+    rm -f "${env_file}.bak"
+    success "Updated BEACON_ENR_ADDRESS from $current_ip to $selected_ip in CL/.env"
+  else
+    # Add new entry
+    echo "BEACON_ENR_ADDRESS=$selected_ip" >> "$env_file"
+    success "Added BEACON_ENR_ADDRESS=$selected_ip to CL/.env"
+  fi
 }
 
 # Get docker compose command for a node
@@ -243,6 +401,13 @@ main() {
   shift
 
   case $command in
+    init)
+      if [ $# -eq 0 ]; then
+        error "Please specify a node (cl/all)"
+        exit 1
+      fi
+      init_node "$@"
+      ;;
     start)
       if [ $# -eq 0 ]; then
         error "Please specify a node (el/cl/vc/all)"
