@@ -38,8 +38,26 @@ LabChain is a Proof-of-Stake Ethereum network. There are three types of nodes yo
 Before you begin, make sure you have:
 
 **1. Docker & Docker Compose**
+
+Install Docker:
 ```bash
-# Verify installation
+curl -fsSL https://get.docker.com | sh
+```
+
+Create a new user and grant docker permissions:
+```bash
+# Create new user (replace 'nodeuser' with your preferred username)
+sudo useradd -m -s /bin/bash nodeuser
+
+# Add user to docker group
+sudo usermod -aG docker nodeuser
+
+# Switch to new user
+su - nodeuser
+```
+
+Verify installation:
+```bash
 docker --version
 docker compose version
 ```
