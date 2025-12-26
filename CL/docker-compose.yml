@@ -57,7 +57,7 @@ services:
           --disable-discovery \
           --target-peers ${TARGET_PEERS:-100} \
           --allow-insecure-genesis-sync \
-          $BOOTNODE_FLAGS \
+          $$BOOTNODE_FLAGS \
           ${EXTRA_LIGHTHOUSE_FLAGS:-}
     volumes:
       - ${CL_DATA_DIR:-./data}:/data
