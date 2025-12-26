@@ -82,6 +82,7 @@ sudo apt install jq
 | Chain ID | `5222` |
 | Slot Duration | 12 seconds |
 | Deposit Contract | `0x5454545454545454545454545454545454545454` |
+| Explorer | https://explorer.labchain.la |
 
 ---
 
