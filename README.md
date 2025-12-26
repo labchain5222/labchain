@@ -214,7 +214,7 @@ curl http://localhost:5052/eth/v1/node/syncing
 To become a validator, you need to:
 1. Have a running Beacon Node (CL)
 2. Generate validator keystores
-3. Deposit 32 ETH per validator
+3. Deposit 32 LAB per validator
 4. Run the Validator Client (VC)
 
 ### Step 1: Generate Validator Keystores
@@ -233,7 +233,7 @@ cd VC
 # Generate 1 validator with your withdrawal address
 ./manage-validators.sh \
   --count 1 \
-  --withdrawal 0xYOUR_ETH_ADDRESS \
+  --withdrawal 0xYOUR_LAB_ADDRESS \
   --output ./output \
   --managed-root ./my-keystores
 ```
@@ -242,7 +242,7 @@ The script will prompt you to enter your mnemonic phrase.
 
 **Script options:**
 - `--count <number>` - Number of validators to create (default: 64)
-- `--withdrawal <address>` - Your ETH address for withdrawals
+- `--withdrawal <address>` - Your LAB address for withdrawals
 - `--output <dir>` - Where to save output files (default: ./output)
 - `--managed-root <dir>` - Where to save keystores (default: ./managed-keystores)
 - `--first-index <number>` - Starting validator index (default: 0)
@@ -253,9 +253,9 @@ This creates:
 - `./my-keystores/validators/` - Keystore files
 - `./my-keystores/secrets/` - Password files
 
-### Step 2: Fund Your Validators (Deposit 32 ETH)
+### Step 2: Fund Your Validators (Deposit 32 LAB)
 
-You need 32 ETH per validator. Use the deposit script:
+You need 32 LAB per validator. Use the deposit script:
 
 ```bash
 ./broadcast-deposits.sh \
@@ -276,7 +276,7 @@ You need 32 ETH per validator. Use the deposit script:
 - `--contract <address>` - Deposit contract address
 - `--dry-run` - Preview transactions without sending
 
-**Note:** Each deposit costs 32 ETH. Wait for deposits to be processed (about 16-24 hours).
+**Note:** Each deposit costs 32 LAB. Wait for deposits to be processed (about 16-24 hours).
 
 ### Step 3: Configure and Start Validator Client
 
