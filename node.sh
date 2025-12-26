@@ -29,7 +29,7 @@ USAGE:
   ./node.sh <command> [node]
 
 COMMANDS:
-  init <node>       Initialize node configuration (set public IP)
+  init <node>       Interactive configuration for a node
   start <node>      Start a node
   stop <node>       Stop a node
   restart <node>    Restart a node
@@ -44,7 +44,10 @@ NODES:
   all     All nodes
 
 EXAMPLES:
-  ./node.sh init cl           # Initialize CL (select public/internal IP)
+  ./node.sh init el           # Configure EL (ports, bootnode)
+  ./node.sh init cl           # Configure CL (ports, discovery, bootnodes)
+  ./node.sh init vc           # Configure VC (beacon endpoints, fee recipient)
+  ./node.sh init all          # Configure all nodes interactively
   ./node.sh start all         # Start all nodes (EL, CL, VC)
   ./node.sh start el          # Start only EL
   ./node.sh stop vc           # Stop validator client
@@ -70,6 +73,150 @@ ENVIRONMENT VARIABLES:
     FEE_RECIPIENT       - Fee recipient address
 
 EOF
+}
+
+# Truncate long text for display
+truncate_text() {
+  local text="$1"
+  local max_len="${2:-40}"
+
+  if [ ${#text} -gt $max_len ]; then
+    echo "${text:0:$max_len}..."
+  else
+    echo "$text"
+  fi
+}
+
+# Prompt for input with default value
+# Usage: prompt_input "Description" "default_value"
+# Returns: the user input or default value
+prompt_input() {
+  local description="$1"
+  local default="$2"
+  local value
+  local display_default
+
+  if [ -n "$default" ]; then
+    display_default=$(truncate_text "$default" 40)
+    read -p "  [$description (default: $display_default)]: " value
+    value="${value:-$default}"
+  else
+    read -p "  [$description]: " value
+  fi
+
+  echo "$value"
+}
+
+# Prompt for IP selection (public/internal/custom)
+prompt_ip_selection() {
+  local description="$1"
+  local default="$2"
+
+  echo -e "  [${description} (default: $default)]:" >&2
+
+  local public_ip internal_ip
+  public_ip=$(get_public_ip 2>/dev/null) || public_ip=""
+  internal_ip=$(get_internal_ip 2>/dev/null) || internal_ip=""
+
+  local options=()
+  local option_num=1
+
+  if [ -n "$public_ip" ]; then
+    echo -e "    ${GREEN}$option_num)${NC} Public IP: $public_ip" >&2
+    options+=("$public_ip")
+    ((option_num++))
+  fi
+
+  if [ -n "$internal_ip" ]; then
+    echo -e "    ${GREEN}$option_num)${NC} Internal IP: $internal_ip" >&2
+    options+=("$internal_ip")
+    ((option_num++))
+  fi
+
+  echo -e "    ${GREEN}$option_num)${NC} Keep current ($default)" >&2
+  options+=("$default")
+  ((option_num++))
+
+  echo -e "    ${GREEN}$option_num)${NC} Custom IP (enter manually)" >&2
+  options+=("custom")
+
+  local selection
+  while true; do
+    read -p "  Select [1-$option_num]: " selection
+
+    if [ -z "$selection" ]; then
+      echo "$default"
+      return
+    fi
+
+    if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$option_num" ]; then
+      break
+    fi
+    warn "Invalid selection"
+  done
+
+  local idx=$((selection - 1))
+  local selected="${options[$idx]}"
+
+  if [ "$selected" = "custom" ]; then
+    while true; do
+      read -p "  Enter custom IP: " selected
+      if [[ $selected =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        break
+      fi
+      warn "Invalid IP format (e.g., 192.168.1.100)"
+    done
+  fi
+
+  echo "$selected"
+}
+
+# Prompt for discovery mode selection
+prompt_discovery_mode() {
+  local default="$1"
+  local selected
+
+  echo -e "  [Discovery mode (default: $default)]:" >&2
+  echo -e "    ${GREEN}1)${NC} enr - ENR-based discovery (--boot-nodes)" >&2
+  echo -e "    ${GREEN}2)${NC} libp2p - libp2p multiaddr (--libp2p-addresses)" >&2
+
+  local selection
+  read -p "  Select [1-2]: " selection
+
+  case "$selection" in
+    1) selected="enr" ;;
+    2) selected="libp2p" ;;
+    *) selected="$default" ;;
+  esac
+
+  echo "$selected"
+}
+
+# Update a variable in .env file
+update_env_var() {
+  local env_file="$1"
+  local var_name="$2"
+  local new_value="$3"
+
+  if grep -q "^${var_name}=" "$env_file"; then
+    sed -i.bak "s|^${var_name}=.*|${var_name}=${new_value}|" "$env_file"
+    rm -f "${env_file}.bak"
+  else
+    echo "${var_name}=${new_value}" >> "$env_file"
+  fi
+}
+
+# Get current value from .env file
+get_env_var() {
+  local env_file="$1"
+  local var_name="$2"
+  local default="$3"
+
+  if [ -f "$env_file" ] && grep -q "^${var_name}=" "$env_file"; then
+    grep "^${var_name}=" "$env_file" | cut -d'=' -f2-
+  else
+    echo "$default"
+  fi
 }
 
 # Get public IP address
@@ -118,19 +265,141 @@ init_node() {
   local node=$1
 
   case $node in
+    el)
+      init_el
+      ;;
     cl)
       init_cl
       ;;
+    vc)
+      init_vc
+      ;;
     all)
       info "Initializing all nodes..."
+      echo ""
+      init_el
+      echo ""
+      echo -e "${BLUE}────────────────────────────────────────${NC}"
       init_cl
+      echo ""
+      echo -e "${BLUE}────────────────────────────────────────${NC}"
+      init_vc
+      echo ""
       success "All nodes initialized"
       ;;
     *)
-      error "Init not supported for node: $node (currently only 'cl' is supported)"
+      error "Unknown node: $node. Use 'el', 'cl', 'vc', or 'all'"
       return 1
       ;;
   esac
+}
+
+# Initialize VC configuration
+init_vc() {
+  local env_file="$SCRIPT_DIR/VC/.env"
+
+  if [ ! -f "$env_file" ]; then
+    error "VC/.env file not found"
+    return 1
+  fi
+
+  echo ""
+  echo -e "${BLUE}=== Validator Client (VC) Configuration ===${NC}"
+  echo -e "${YELLOW}Press Enter to keep current/default value${NC}"
+  echo ""
+
+  # Get current values
+  local cur_beacon_endpoints=$(get_env_var "$env_file" "BEACON_NODE_ENDPOINTS" "http://lighthouse-bn:5052")
+  local cur_fee_recipient=$(get_env_var "$env_file" "FEE_RECIPIENT" "0x0000000000000000000000000000000000000000")
+  local cur_keystore_dir=$(get_env_var "$env_file" "KEYSTORE_DIR" "./managed-keystores")
+
+  # Prompt for each config
+  local new_beacon_endpoints=$(prompt_input "Beacon node REST endpoints (comma-separated)" "$cur_beacon_endpoints")
+  echo ""
+
+  local new_fee_recipient=$(prompt_input "Fee recipient address for block proposals (0x...)" "$cur_fee_recipient")
+  echo ""
+
+  local new_keystore_dir=$(prompt_input "Root directory for validator keystores" "$cur_keystore_dir")
+
+  # Update .env file
+  echo ""
+  info "Updating VC/.env..."
+
+  update_env_var "$env_file" "BEACON_NODE_ENDPOINTS" "$new_beacon_endpoints"
+  update_env_var "$env_file" "FEE_RECIPIENT" "$new_fee_recipient"
+  update_env_var "$env_file" "KEYSTORE_DIR" "$new_keystore_dir"
+
+  success "VC configuration updated successfully!"
+  echo ""
+  echo -e "${BLUE}Configuration Summary:${NC}"
+  echo -e "  ${GREEN}BEACON_NODE_ENDPOINTS${NC} (Beacon node REST endpoints)"
+  echo -e "    → $new_beacon_endpoints"
+  echo -e "  ${GREEN}FEE_RECIPIENT${NC} (Fee recipient address for block proposals)"
+  echo -e "    → $new_fee_recipient"
+  echo -e "  ${GREEN}KEYSTORE_DIR${NC} (Root directory for validator keystores)"
+  echo -e "    → $new_keystore_dir"
+}
+
+# Initialize EL configuration
+init_el() {
+  local env_file="$SCRIPT_DIR/EL/.env"
+
+  if [ ! -f "$env_file" ]; then
+    error "EL/.env file not found"
+    return 1
+  fi
+
+  echo ""
+  echo -e "${BLUE}=== Execution Layer (EL) Configuration ===${NC}"
+  echo -e "${YELLOW}Press Enter to keep current/default value${NC}"
+  echo ""
+
+  # Get current values
+  local cur_http_port=$(get_env_var "$env_file" "HTTP_PORT" "8545")
+  local cur_ws_port=$(get_env_var "$env_file" "WS_PORT" "8546")
+  local cur_authrpc_port=$(get_env_var "$env_file" "AUTHRPC_PORT" "8551")
+  local cur_p2p_port=$(get_env_var "$env_file" "P2P_PORT" "30303")
+  local cur_bootnode_enode=$(get_env_var "$env_file" "BOOTNODE_ENODE" "")
+
+  # Prompt for each config
+  local new_http_port=$(prompt_input "JSON-RPC HTTP port" "$cur_http_port")
+  echo ""
+
+  local new_ws_port=$(prompt_input "WebSocket RPC port" "$cur_ws_port")
+  echo ""
+
+  local new_authrpc_port=$(prompt_input "Auth RPC port (engine API for CL)" "$cur_authrpc_port")
+  echo ""
+
+  local new_p2p_port=$(prompt_input "P2P networking port" "$cur_p2p_port")
+  echo ""
+
+  local new_bootnode_enode=$(prompt_input "Bootnode enode URL (enode://...@host:port)" "$cur_bootnode_enode")
+
+  # Update .env file
+  echo ""
+  info "Updating EL/.env..."
+
+  update_env_var "$env_file" "HTTP_PORT" "$new_http_port"
+  update_env_var "$env_file" "WS_PORT" "$new_ws_port"
+  update_env_var "$env_file" "AUTHRPC_PORT" "$new_authrpc_port"
+  update_env_var "$env_file" "P2P_PORT" "$new_p2p_port"
+  update_env_var "$env_file" "BOOTNODE_ENODE" "$new_bootnode_enode"
+
+  success "EL configuration updated successfully!"
+  echo ""
+  echo -e "${BLUE}Configuration Summary:${NC}"
+  echo -e "  ${GREEN}HTTP_PORT${NC} (JSON-RPC HTTP port)"
+  echo -e "    → $new_http_port"
+  echo -e "  ${GREEN}WS_PORT${NC} (WebSocket RPC port)"
+  echo -e "    → $new_ws_port"
+  echo -e "  ${GREEN}AUTHRPC_PORT${NC} (Auth RPC port for CL engine API)"
+  echo -e "    → $new_authrpc_port"
+  echo -e "  ${GREEN}P2P_PORT${NC} (P2P networking port)"
+  echo -e "    → $new_p2p_port"
+  echo -e "  ${GREEN}BOOTNODE_ENODE${NC} (Bootnode enode URL)"
+  echo -e "    → ${new_bootnode_enode:-(not set)}"
 }
 
 # Initialize CL configuration
@@ -142,89 +411,90 @@ init_cl() {
     return 1
   fi
 
-  # Get both IP addresses
-  info "Detecting IP addresses..."
-  local public_ip internal_ip
-  public_ip=$(get_public_ip)
-  internal_ip=$(get_internal_ip)
-
   echo ""
-  echo -e "${BLUE}Available IP addresses:${NC}"
+  echo -e "${BLUE}=== Consensus Layer (CL) Configuration ===${NC}"
+  echo -e "${YELLOW}Press Enter to keep current/default value${NC}"
   echo ""
 
-  local options=()
-  local option_num=1
+  # Get current values
+  local cur_exec_endpoint=$(get_env_var "$env_file" "EXECUTION_ENDPOINT" "http://reth-node:8551")
+  local cur_http_port=$(get_env_var "$env_file" "HTTP_PORT" "5052")
+  local cur_p2p_port=$(get_env_var "$env_file" "P2P_PORT" "9000")
+  local cur_target_peers=$(get_env_var "$env_file" "TARGET_PEERS" "64")
+  local cur_enr_address=$(get_env_var "$env_file" "BEACON_ENR_ADDRESS" "127.0.0.1")
+  local cur_discovery_mode=$(get_env_var "$env_file" "DISCOVERY_MODE" "enr")
+  local cur_bootnode_enr=$(get_env_var "$env_file" "BOOTNODE_ENR" "")
+  local cur_bootnode_libp2p=$(get_env_var "$env_file" "BOOTNODE_LIBP2P" "")
 
-  if [ -n "$public_ip" ]; then
-    echo -e "  ${GREEN}$option_num)${NC} Public IP:   $public_ip"
-    options+=("$public_ip")
-    ((option_num++))
-  fi
-
-  if [ -n "$internal_ip" ]; then
-    echo -e "  ${GREEN}$option_num)${NC} Internal IP: $internal_ip"
-    options+=("$internal_ip")
-    ((option_num++))
-  fi
-
-  echo -e "  ${GREEN}$option_num)${NC} Custom IP (enter manually)"
-  options+=("custom")
-
+  # Prompt for each config
+  local new_exec_endpoint=$(prompt_input "Execution engine endpoint (reth engine API)" "$cur_exec_endpoint")
   echo ""
 
-  if [ ${#options[@]} -eq 1 ]; then
-    error "Failed to detect any IP addresses"
-    return 1
-  fi
+  local new_http_port=$(prompt_input "Beacon HTTP API port" "$cur_http_port")
+  echo ""
 
-  # Prompt user for selection
-  local selection
-  while true; do
-    read -p "Select IP type [1-$option_num]: " selection
+  local new_p2p_port=$(prompt_input "P2P networking port" "$cur_p2p_port")
+  echo ""
 
-    if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$option_num" ]; then
-      break
-    fi
-    warn "Invalid selection. Please enter a number between 1 and $option_num"
-  done
+  local new_target_peers=$(prompt_input "Target number of peers" "$cur_target_peers")
+  echo ""
 
-  local selected_ip
-  local idx=$((selection - 1))
+  info "Detecting IP addresses for ENR..."
+  local new_enr_address=$(prompt_ip_selection "ENR address for P2P discovery" "$cur_enr_address")
+  echo ""
 
-  if [ "${options[$idx]}" = "custom" ]; then
-    # Custom IP entry
-    while true; do
-      read -p "Enter custom IP address: " selected_ip
-      if [[ $selected_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        break
-      fi
-      warn "Invalid IP format. Please enter a valid IPv4 address (e.g., 192.168.1.100)"
-    done
+  local new_discovery_mode=$(prompt_discovery_mode "$cur_discovery_mode")
+  echo ""
+
+  local new_bootnode_enr
+  if [ "$new_discovery_mode" = "enr" ]; then
+    new_bootnode_enr=$(prompt_input "ENR bootnode(s) for sync (comma-separated enr:-...)" "$cur_bootnode_enr")
   else
-    selected_ip="${options[$idx]}"
+    new_bootnode_enr="$cur_bootnode_enr"
+  fi
+  echo ""
+
+  local new_bootnode_libp2p
+  if [ "$new_discovery_mode" = "libp2p" ]; then
+    new_bootnode_libp2p=$(prompt_input "libp2p bootnode(s) (comma-separated /ip4/.../tcp/.../p2p/...)" "$cur_bootnode_libp2p")
+  else
+    new_bootnode_libp2p="$cur_bootnode_libp2p"
   fi
 
-  info "Selected Discovery IP: $selected_ip"
+  # Update .env file
+  echo ""
+  info "Updating CL/.env..."
 
-  # Update BEACON_ENR_ADDRESS in .env file
-  if grep -q "^BEACON_ENR_ADDRESS=" "$env_file"; then
-    # Get current value
-    local current_ip
-    current_ip=$(grep "^BEACON_ENR_ADDRESS=" "$env_file" | cut -d'=' -f2)
+  update_env_var "$env_file" "EXECUTION_ENDPOINT" "$new_exec_endpoint"
+  update_env_var "$env_file" "HTTP_PORT" "$new_http_port"
+  update_env_var "$env_file" "P2P_PORT" "$new_p2p_port"
+  update_env_var "$env_file" "TARGET_PEERS" "$new_target_peers"
+  update_env_var "$env_file" "BEACON_ENR_ADDRESS" "$new_enr_address"
+  update_env_var "$env_file" "DISCOVERY_MODE" "$new_discovery_mode"
+  update_env_var "$env_file" "BOOTNODE_ENR" "$new_bootnode_enr"
+  update_env_var "$env_file" "BOOTNODE_LIBP2P" "$new_bootnode_libp2p"
 
-    if [ "$current_ip" = "$selected_ip" ]; then
-      info "BEACON_ENR_ADDRESS is already set to $selected_ip"
-      return 0
-    fi
-
-    # Replace existing value
-    sed -i.bak "s/^BEACON_ENR_ADDRESS=.*/BEACON_ENR_ADDRESS=$selected_ip/" "$env_file"
-    rm -f "${env_file}.bak"
-    success "Updated BEACON_ENR_ADDRESS from $current_ip to $selected_ip in CL/.env"
+  success "CL configuration updated successfully!"
+  echo ""
+  echo -e "${BLUE}Configuration Summary:${NC}"
+  echo -e "  ${GREEN}EXECUTION_ENDPOINT${NC} (Execution engine endpoint - reth engine API)"
+  echo -e "    → $new_exec_endpoint"
+  echo -e "  ${GREEN}HTTP_PORT${NC} (Beacon HTTP API port)"
+  echo -e "    → $new_http_port"
+  echo -e "  ${GREEN}P2P_PORT${NC} (P2P networking port)"
+  echo -e "    → $new_p2p_port"
+  echo -e "  ${GREEN}TARGET_PEERS${NC} (Target number of peers)"
+  echo -e "    → $new_target_peers"
+  echo -e "  ${GREEN}BEACON_ENR_ADDRESS${NC} (ENR address for P2P discovery)"
+  echo -e "    → $new_enr_address"
+  echo -e "  ${GREEN}DISCOVERY_MODE${NC} (Discovery protocol: enr or libp2p)"
+  echo -e "    → $new_discovery_mode"
+  if [ "$new_discovery_mode" = "enr" ]; then
+    echo -e "  ${GREEN}BOOTNODE_ENR${NC} (ENR bootnode addresses)"
+    echo -e "    → ${new_bootnode_enr:-(not set)}"
   else
-    # Add new entry
-    echo "BEACON_ENR_ADDRESS=$selected_ip" >> "$env_file"
-    success "Added BEACON_ENR_ADDRESS=$selected_ip to CL/.env"
+    echo -e "  ${GREEN}BOOTNODE_LIBP2P${NC} (libp2p bootnode addresses)"
+    echo -e "    → ${new_bootnode_libp2p:-(not set)}"
   fi
 }
 
@@ -403,7 +673,7 @@ main() {
   case $command in
     init)
       if [ $# -eq 0 ]; then
-        error "Please specify a node (cl/all)"
+        error "Please specify a node (el/cl/vc/all)"
         exit 1
       fi
       init_node "$@"
