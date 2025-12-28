@@ -165,7 +165,7 @@ check_rpc_connection() {
 check_balance() {
     local address="$1"
     local rpc_url="$2"
-    local required_wei="$3"
+    local required_lab="$3"
 
     local balance_wei
     balance_wei=$(cast balance "$address" --rpc-url "$rpc_url" 2>/dev/null) || {
@@ -178,10 +178,11 @@ check_balance() {
 
     info "Account balance: ${balance_lab} LAB"
 
-    # Compare balances
-    if [[ "$balance_wei" -lt "$required_wei" ]] 2>/dev/null; then
-        local required_lab
-        required_lab=$(cast to-unit "$required_wei" ether 2>/dev/null) || required_lab="N/A"
+    # Compare balances using bc (handles large numbers)
+    local is_insufficient
+    is_insufficient=$(echo "$balance_lab < $required_lab" | bc -l 2>/dev/null) || is_insufficient="0"
+
+    if [[ "$is_insufficient" == "1" ]]; then
         warn "Insufficient balance! Need at least ${required_lab} LAB"
         return 1
     fi
@@ -265,7 +266,6 @@ main() {
     echo ""
 
     local total_required=$((total_deposits * 32))
-    local total_required_wei="${total_required}000000000000000000"
     echo -e "  ${YELLOW}Required: ${total_required} LAB (${total_deposits} × 32 LAB)${NC}"
     echo ""
 
@@ -282,7 +282,7 @@ main() {
             continue
         fi
 
-        check_balance "$FROM_ADDRESS" "$RPC_URL" "$total_required_wei" || {
+        check_balance "$FROM_ADDRESS" "$RPC_URL" "$total_required" || {
             if ! prompt_yes_no "Continue anyway?" "n"; then
                 continue
             fi
