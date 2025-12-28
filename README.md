@@ -219,62 +219,39 @@ To become a validator, you need to:
 
 ### Step 1: Generate Validator Keystores
 
-First, generate a mnemonic (24-word recovery phrase) if you don't have one:
-```bash
-# You can use any BIP-39 mnemonic generator, or create one with:
-# https://iancoleman.io/bip39/
-```
-
-**Important:** Save your mnemonic securely! This is the only way to recover your validator keys.
-
 ```bash
 cd VC
-
-# Generate 1 validator with your withdrawal address
-./manage-validators.sh \
-  --count 1 \
-  --withdrawal 0xYOUR_LAB_ADDRESS \
-  --output ./output \
-  --managed-root ./my-keystores
+./manage-validators.sh
 ```
 
-The script will prompt you to enter your mnemonic phrase.
+The script will guide you through:
+1. Number of validators to create (default: 1)
+2. Your LAB withdrawal address
+3. Starting validator index (default: 0)
+4. Output directories
 
-**Script options:**
-- `--count <number>` - Number of validators to create (default: 64)
-- `--withdrawal <address>` - Your LAB address for withdrawals
-- `--output <dir>` - Where to save output files (default: ./output)
-- `--managed-root <dir>` - Where to save keystores (default: ./managed-keystores)
-- `--first-index <number>` - Starting validator index (default: 0)
+**Important:** Save your mnemonic securely when prompted! This is the only way to recover your validator keys.
 
 This creates:
 - `./output/deposits.json` - Deposit data for broadcasting
-- `./output/validators.json` - Full validator info
-- `./my-keystores/validators/` - Keystore files
-- `./my-keystores/secrets/` - Password files
+- `./managed-keystores/validators/` - Keystore files
+- `./managed-keystores/secrets/` - Password files
 
 ### Step 2: Fund Your Validators (Deposit 32 LAB)
 
 You need 32 LAB per validator. Use the deposit script:
 
 ```bash
-./broadcast-deposits.sh \
-  --rpc http://localhost:8545 \
-  --deposits ./output/deposits.json \
-  --from 0xYOUR_FUNDED_ADDRESS \
-  --chain-id 5222 \
-  --private-key YOUR_PRIVATE_KEY_HEX \
-  --contract 0x5454545454545454545454545454545454545454
+./broadcast-deposits.sh
 ```
 
-**Script options:**
-- `--rpc <url>` - EL RPC endpoint
-- `--deposits <file>` - Path to deposits.json from Step 1
-- `--from <address>` - Your funded wallet address
-- `--chain-id <id>` - Network chain ID (5222 for LabChain)
-- `--private-key <hex>` - Private key of funded wallet (no 0x prefix)
-- `--contract <address>` - Deposit contract address
-- `--dry-run` - Preview transactions without sending
+The script will guide you through:
+1. Path to deposits.json (default: ./output/deposits.json)
+2. RPC endpoint (default: http://localhost:8545)
+3. Sender address (your funded wallet)
+4. Private key (hidden input)
+5. Chain ID and deposit contract (pre-configured defaults)
+6. Dry-run option to preview before sending
 
 **Note:** Each deposit costs 32 LAB. Wait for deposits to be processed (about 16-24 hours).
 
