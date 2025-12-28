@@ -1,6 +1,6 @@
-# LabChain - Join the Network
+# LAB Chain - Join the Network
 
-Welcome to LabChain! This guide will help you join our network as a node operator or validator.
+Welcome to LAB Chain! This guide will help you join our network as a node operator or validator.
 
 ---
 
@@ -18,7 +18,7 @@ Welcome to LabChain! This guide will help you join our network as a node operato
 
 ## Overview
 
-LabChain is a Proof-of-Stake Ethereum network. There are three types of nodes you can run:
+LAB Chain is a Proof-of-Stake Ethereum network. There are three types of nodes you can run:
 
 | Node Type | What It Does | When to Use |
 |-----------|--------------|-------------|
@@ -392,4 +392,4 @@ If you need help:
 
 ---
 
-**LabChain** - LAO Blockchain Made with love, by Uncle Os555 and Xangnam - LAOITDEV Team
+**LAB Chain** - LAO Blockchain Made with love, by Uncle Os555 and Xangnam - LAOITDEV Team
