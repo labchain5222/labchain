@@ -406,7 +406,7 @@ main() {
             echo "    Pubkey: 0x${pubkey}"
             echo ""
             success "[DRY-RUN] Deposit ${num}/${total_deposits} validated"
-            ((success_count++))
+            success_count=$((success_count + 1))
             continue
         fi
 
@@ -432,7 +432,7 @@ main() {
         if [[ $exit_code -ne 0 ]]; then
             error "Failed to broadcast deposit ${num}"
             echo "$tx_output"
-            ((fail_count++))
+            fail_count=$((fail_count + 1))
             continue
         fi
 
@@ -447,7 +447,7 @@ main() {
             success "Deposit ${num}/${total_deposits} broadcast!"
         fi
 
-        ((success_count++))
+        success_count=$((success_count + 1))
 
         # Delay between deposits
         if [[ $num -lt $total_deposits ]]; then
