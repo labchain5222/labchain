@@ -393,6 +393,8 @@ cd EL
 ```
 This returns the enode URL (e.g., `enode://abc123...@IP:30303`) that other EL nodes can use to connect.
 
+**Note:** When sharing bootnode addresses with other operators, replace `IP` with your server's public IP address so they can connect to your node.
+
 **Get CL Bootnode ENR:**
 ```bash
 cd CL
@@ -407,7 +409,7 @@ curl -s http://localhost:5052/eth/v1/node/identity | jq -r '.data.p2p_addresses[
 ```
 This returns the libp2p multiaddr (e.g., `/ip4/IP/tcp/9000/p2p/PEER_ID`) for nodes using libp2p discovery mode.
 
-**Note:** When sharing bootnode addresses with other operators, replace `127.0.0.1` or `localhost` with your server's public IP address so they can connect to your node.
+**Note:** When sharing bootnode addresses with other operators, replace `IP` with your server's public IP address so they can connect to your node.
 
 You can also specify a custom RPC URL:
 ```bash
