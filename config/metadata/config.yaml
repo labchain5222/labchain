@@ -24,8 +24,8 @@ TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH: 18446744073709551615
 # ---------------------------------------------------------------
 # `2**14` (= 16,384)
 MIN_GENESIS_ACTIVE_VALIDATOR_COUNT: 64
-# 2025-Dec-24 05:08:42 PM UTC
-MIN_GENESIS_TIME: 1766596122
+# 2026-Jan-17 05:03:17 AM UTC
+MIN_GENESIS_TIME: 1768626197
 # Mainnet initial fork version, recommend altering for testnets
 GENESIS_FORK_VERSION: 0x10000000
 # Some seconds
